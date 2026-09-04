@@ -12,206 +12,287 @@ st.markdown(
     "Explore electromagnetic wave polarization, components, and 3D propagation dynamically."
 )
 
-# Sidebar Controls (These will NEVER flicker or reset now)
+# Sidebar Controls for Static Wave Parameters
 st.sidebar.header("Wave Parameters")
 a_y = st.sidebar.slider("Ex Amplitude", 0.0, 1.2, 1.0, 0.05)
 a_z = st.sidebar.slider("Ey Amplitude", 0.0, 1.2, 0.5, 0.05)
 deg_offset = st.sidebar.slider("Phase Angle (deg)", -180.0, 180.0, 0.0, 1.0)
 
-st.sidebar.markdown("---")
-st.sidebar.header("Animation Controls")
-auto_play = st.sidebar.checkbox("Auto-Play Animation", value=True)
-speed = st.sidebar.slider("Animation Speed", 0.02, 0.3, 0.1, 0.02)
+# Determine Polarization State
+if a_y < 0.05 and a_z > 0.05:
+  pol_state = "Linear (Vertical)"
+elif a_z < 0.05 and a_y > 0.05:
+  pol_state = "Linear (Horizontal)"
+elif abs(a_y - a_z) < 0.05 and abs(deg_offset) < 5.0:
+  pol_state = "Linear (Diagonal)"
+elif abs(a_y - a_z) < 0.05 and abs(abs(deg_offset) - 90.0) < 5.0:
+  pol_state = "LHCP" if deg_offset < 0 else "RHCP"
+else:
+  pol_state = "LHEP" if deg_offset < 0 else "RHEP"
 
-# Initialize session state for animation frame
-if "animation_frame" not in st.session_state:
-  st.session_state.animation_frame = 0.0
+st.markdown(
+    f"### Polarization State: **{pol_state}** | Ex: `{a_y:.2f}` | Ey:"
+    f" `{a_z:.2f}`"
+)
 
+# Constants
+x = np.linspace(0, 5 * np.pi, 600)
+x_paper = 2.7 * np.pi
+p_offset = np.radians(deg_offset)
+theta_circle = np.linspace(0, 2 * np.pi, 400)
 
-# Define an isolated fragment that updates automatically without reloading the page layout
-@st.fragment(run_every=0.05 if auto_play else None)
-def render_wave_plots():
-  # Advance frame if auto-play is active
-  if auto_play:
-    st.session_state.animation_frame += speed
-    if st.session_state.animation_frame > 2 * np.pi:
-      st.session_state.animation_frame = 0.0
+# Build Frames for Native Client-Side Animation
+frames_list = []
+animation_steps = 40
+phases = np.linspace(0, 2 * np.pi, animation_steps, endpoint=False)
 
-  # Constants & Computations
-  x = np.linspace(0, 5 * np.pi, 600)
-  x_paper = 2.7 * np.pi
-  p_offset = np.radians(deg_offset)
-  phase = x - st.session_state.animation_frame
+for i, phi in enumerate(phases):
+  ey = a_y * np.cos(x - phi)
+  ez = a_z * np.cos(x - phi + p_offset)
 
-  ey = a_y * np.cos(phase)
-  ez = a_z * np.cos(phase + p_offset)
-
-  cur_theta = x_paper - st.session_state.animation_frame
+  cur_theta = x_paper - phi
   cur_ey = a_y * np.cos(cur_theta)
   cur_ez = a_z * np.cos(cur_theta + p_offset)
 
-  # Determine Polarization State
-  if a_y < 0.05 and a_z > 0.05:
-    pol_state = "Linear (Vertical)"
-  elif a_z < 0.05 and a_y > 0.05:
-    pol_state = "Linear (Horizontal)"
-  elif abs(a_y - a_z) < 0.05 and abs(deg_offset) < 5.0:
-    pol_state = "Linear (Diagonal)"
-  elif abs(a_y - a_z) < 0.05 and abs(abs(deg_offset) - 90.0) < 5.0:
-    pol_state = "LHCP" if deg_offset < 0 else "RHCP"
-  else:
-    pol_state = "LHEP" if deg_offset < 0 else "RHEP"
+  net_wave_x = x
+  net_wave_y = a_y * np.cos(x - phi)
+  net_wave_z = a_z * np.cos(x - phi + p_offset)
 
-  st.markdown(
-      f"### Polarization State: **{pol_state}** | Ex: `{a_y:.2f}` | Ey:"
-      f" `{a_z:.2f}`"
-  )
-
-  # Layout: 3 columns for 3 plots
-  col1, col2, col3 = st.columns(3)
-
-  def add_paper_plane(fig_ax):
-    y_p = np.linspace(-1.3, 1.3, 10)
-    z_p = np.linspace(-1.3, 1.3, 10)
-    Y_p, Z_p = np.meshgrid(y_p, z_p)
-    X_p = np.full_like(Y_p, x_paper)
-
-    fig_ax.add_trace(
-        go.Surface(
-            x=X_p,
-            y=Y_p,
-            z=Z_p,
-            colorscale=[[0, "wheat"], [1, "wheat"]],
-            opacity=0.25,
-            showscale=False,
-        )
-    )
-    fig_ax.add_trace(
-        go.Scatter3d(
-            x=[0, 5 * np.pi],
-            y=[0, 0],
-            z=[0, 0],
-            mode="lines",
-            line=dict(color="black", width=4),
-            showlegend=False,
-        )
-    )
-
-  # --- PLOT 1 ---
-  fig1 = go.Figure()
-  add_paper_plane(fig1)
-  fig1.add_trace(
+  # Each frame contains updates for all 3 subplots (traces 0 to 8)
+  frame_data = [
+      # Subplot 1 Traces
       go.Scatter3d(
-          x=x,
-          y=ey,
-          z=np.zeros_like(x),
-          mode="lines",
-          name="Ex component",
-          line=dict(color="crimson", width=3),
-      )
-  )
-  fig1.add_trace(
+          x=x, y=ey, z=np.zeros_like(x)
+      ),  # Ex component (trace 1 in fig)
       go.Scatter3d(
-          x=x,
-          y=np.zeros_like(x),
-          z=ez,
-          mode="lines",
-          name="Ey component",
-          line=dict(color="royalblue", width=3),
-      )
-  )
-  fig1.add_trace(
+          x=x, y=np.zeros_like(x), z=ez
+      ),  # Ey component (trace 2 in fig)
       go.Scatter3d(
-          x=[x_paper, x_paper],
-          y=[0, cur_ey],
-          z=[0, cur_ez],
-          mode="lines+markers",
-          name="Net E vector",
-          line=dict(color="darkgreen", width=5),
-      )
-  )
-  fig1.update_layout(
-      title="Component-wise Decomposition",
-      scene=dict(
-          xaxis_range=[0, 5 * np.pi],
-          yaxis_range=[-1.2, 1.2],
-          zaxis_range=[-1.2, 1.2],
-          xaxis_title="z",
-          yaxis_title="Ex",
-          zaxis_title="Ey",
+          x=[x_paper, x_paper], y=[0, cur_ey], z=[0, cur_ez]
+      ),  # Net vector (trace 3)
+      # Subplot 2 Traces
+      go.Scatter3d(
+          x=net_wave_x, y=net_wave_y, z=net_wave_z
+      ),  # Traveling wave (trace 5)
+      # Subplot 3 Traces
+      go.Scatter3d(
+          x=np.full_like(theta_circle, x_paper),
+          y=a_y * np.cos(theta_circle),
+          z=a_z * np.cos(theta_circle + p_offset),
+      ),  # Trace circle (trace 7)
+      go.Scatter3d(
+          x=[x_paper], y=[cur_ey], z=[cur_ez]
+      ),  # Instantaneous marker (trace 8)
+  ]
+  frames_list.append(go.Frame(data=frame_data, name=str(i)))
+
+# --- CREATE SINGLE FIGURE WITH SUBPLOTS AND ANIMATION ---
+from plotly.subplots import make_subplots
+
+fig = make_subplots(
+    rows=1,
+    cols=3,
+    specs=[
+        [{"type": "scene"}, {"type": "scene"}, {"type": "scene"}],
+    ],
+    subplot_titles=(
+        "Component Decomposition (Ex & Ey)",
+        "Full 3D Traveling Wave Propagation",
+        "Transverse Plane: Polarization State",
+    ),
+)
+
+
+# Helper function to add paper plane background
+def add_paper_plane(fig_obj, col_idx):
+  y_p = np.linspace(-1.3, 1.3, 10)
+  z_p = np.linspace(-1.3, 1.3, 10)
+  Y_p, Z_p = np.meshgrid(y_p, z_p)
+  X_p = np.full_like(Y_p, x_paper)
+
+  fig_obj.add_trace(
+      go.Surface(
+          x=X_p,
+          y=Y_p,
+          z=Z_p,
+          colorscale=[[0, "wheat"], [1, "wheat"]],
+          opacity=0.25,
+          showscale=False,
       ),
-      margin=dict(l=0, r=0, b=0, t=30),
-      height=450,
+      row=1,
+      col=col_idx,
   )
-  col1.plotly_chart(fig1, use_container_width=True, key="p1")
-
-  # --- PLOT 2 ---
-  fig2 = go.Figure()
-  add_paper_plane(fig2)
-  fig2.add_trace(
+  fig_obj.add_trace(
       go.Scatter3d(
-          x=x,
-          y=a_y * np.cos(x - st.session_state.animation_frame),
-          z=a_z * np.cos(x - st.session_state.animation_frame + p_offset),
+          x=[0, 5 * np.pi],
+          y=[0, 0],
+          z=[0, 0],
           mode="lines",
-          name="Net E wave",
-          line=dict(color="royalblue", width=4),
-      )
-  )
-  fig2.update_layout(
-      title="Full 3D Traveling Wave",
-      scene=dict(
-          xaxis_range=[0, 5 * np.pi],
-          yaxis_range=[-1.2, 1.2],
-          zaxis_range=[-1.2, 1.2],
-          xaxis_title="z",
-          yaxis_title="Ex",
-          zaxis_title="Ey",
+          line=dict(color="black", width=4),
+          showlegend=False,
       ),
-      margin=dict(l=0, r=0, b=0, t=30),
-      height=450,
+      row=1,
+      col=col_idx,
   )
-  col2.plotly_chart(fig2, use_container_width=True, key="p2")
-
-  # --- PLOT 3 ---
-  fig3 = go.Figure()
-  add_paper_plane(fig3)
-  theta = np.linspace(0, 2 * np.pi, 400)
-  fig3.add_trace(
-      go.Scatter3d(
-          x=np.full_like(theta, x_paper),
-          y=a_y * np.cos(theta),
-          z=a_z * np.cos(theta + p_offset),
-          mode="lines",
-          name="E vector trace",
-          line=dict(color="royalblue", width=4),
-      )
-  )
-  fig3.add_trace(
-      go.Scatter3d(
-          x=[x_paper],
-          y=[cur_ey],
-          z=[cur_ez],
-          mode="markers",
-          name="Instantaneous E",
-          marker=dict(color="crimson", size=6),
-      )
-  )
-  fig3.update_layout(
-      title="Transverse Plane Polarization",
-      scene=dict(
-          xaxis_range=[0, 5 * np.pi],
-          yaxis_range=[-1.2, 1.2],
-          zaxis_range=[-1.2, 1.2],
-          xaxis_title="z",
-          yaxis_title="Ex",
-          zaxis_title="Ey",
-      ),
-      margin=dict(l=0, r=0, b=0, t=30),
-      height=450,
-  )
-  col3.plotly_chart(fig3, use_container_width=True, key="p3")
 
 
-# Render the isolated auto-updating fragment
-render_wave_plots()
+# Populate initial traces (Frame 0 state)
+initial_phi = 0.0
+init_ey = a_y * np.cos(x - initial_phi)
+init_ez = a_z * np.cos(x - initial_phi + p_offset)
+init_cur_theta = x_paper - initial_phi
+init_cur_ey = a_y * np.cos(init_cur_theta)
+init_cur_ez = a_z * np.cos(init_cur_theta + p_offset)
+
+# Plot 1 Traces
+add_paper_plane(fig, 1)
+fig.add_trace(
+    go.Scatter3d(
+        x=x,
+        y=init_ey,
+        z=np.zeros_like(x),
+        mode="lines",
+        name="Ex component",
+        line=dict(color="crimson", width=3),
+    ),
+    row=1,
+    col=1,
+)
+fig.add_trace(
+    go.Scatter3d(
+        x=x,
+        y=np.zeros_like(x),
+        z=init_ez,
+        mode="lines",
+        name="Ey component",
+        line=dict(color="royalblue", width=3),
+    ),
+    row=1,
+    col=1,
+)
+fig.add_trace(
+    go.Scatter3d(
+        x=[x_paper, x_paper],
+        y=[0, init_cur_ey],
+        z=[0, init_cur_ez],
+        mode="lines+markers",
+        name="Net E vector",
+        line=dict(color="darkgreen", width=5),
+    ),
+    row=1,
+    col=1,
+)
+
+# Plot 2 Traces
+add_paper_plane(fig, 2)
+fig.add_trace(
+    go.Scatter3d(
+        x=x,
+        y=a_y * np.cos(x - initial_phi),
+        z=a_z * np.cos(x - initial_phi + p_offset),
+        mode="lines",
+        name="Net E wave",
+        line=dict(color="royalblue", width=4),
+    ),
+    row=1,
+    col=2,
+)
+
+# Plot 3 Traces
+add_paper_plane(fig, 3)
+fig.add_trace(
+    go.Scatter3d(
+        x=np.full_like(theta_circle, x_paper),
+        y=a_y * np.cos(theta_circle),
+        z=a_z * np.cos(theta_circle + p_offset),
+        mode="lines",
+        name="E vector trace",
+        line=dict(color="royalblue", width=4),
+    ),
+    row=1,
+    col=3,
+)
+fig.add_trace(
+    go.Scatter3d(
+        x=[x_paper],
+        y=[init_cur_ey],
+        z=[init_cur_ez],
+        mode="markers",
+        name="Instantaneous E",
+        marker=dict(color="crimson", size=6),
+    ),
+    row=1,
+    col=3,
+)
+
+# Assign frames to figure
+fig.frames = frames_list
+
+# Configure layout with native Play/Pause buttons
+fig.update_layout(
+    height=550,
+    margin=dict(l=0, r=0, b=0, t=30),
+    scene=dict(
+        xaxis_range=[0, 5 * np.pi],
+        yaxis_range=[-1.2, 1.2],
+        zaxis_range=[-1.2, 1.2],
+        xaxis_title="z",
+        yaxis_title="Ex",
+        zaxis_title="Ey",
+    ),
+    scene2=dict(
+        xaxis_range=[0, 5 * np.pi],
+        yaxis_range=[-1.2, 1.2],
+        zaxis_range=[-1.2, 1.2],
+        xaxis_title="z",
+        yaxis_title="Ex",
+        zaxis_title="Ey",
+    ),
+    scene3=dict(
+        xaxis_range=[0, 5 * np.pi],
+        yaxis_range=[-1.2, 1.2],
+        zaxis_range=[-1.2, 1.2],
+        xaxis_title="z",
+        yaxis_title="Ex",
+        zaxis_title="Ey",
+    ),
+    updatemenus=[
+        {
+            "type": "buttons",
+            "showactive": False,
+            "buttons": [
+                {
+                    "label": "Play",
+                    "method": "animate",
+                    "args": [
+                        None,
+                        {
+                            "frame": {"duration": 50, "redraw": False},
+                            "fromcurrent": True,
+                            "transition": {"duration": 0},
+                        },
+                    ],
+                },
+                {
+                    "label": "Pause",
+                    "method": "animate",
+                    "args": [
+                        [None],
+                        {
+                            "frame": {"duration": 0, "redraw": False},
+                            "mode": "immediate",
+                            "transition": {"duration": 0},
+                        },
+                    ],
+                },
+            ],
+            "x": 0.1,
+            "y": 1.15,
+            "xanchor": "right",
+            "yanchor": "top",
+        }
+    ],
+)
+
+# Render seamlessly without full page flickers
+st.plotly_chart(fig, use_container_width=True)
