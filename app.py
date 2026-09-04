@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -13,11 +14,48 @@ st.markdown(
     "Explore electromagnetic wave polarization, components, and 3D propagation dynamically."
 )
 
-# Sidebar Controls for Static Wave Parameters
+# --- LEFT SIDEBAR CONTROLS ---
 st.sidebar.header("Wave Parameters")
 a_y = st.sidebar.slider("Ex Amplitude", 0.0, 1.2, 1.0, 0.05)
 a_z = st.sidebar.slider("Ey Amplitude", 0.0, 1.2, 0.5, 0.05)
 deg_offset = st.sidebar.slider("Phase Angle (deg)", -180.0, 180.0, 0.0, 1.0)
+
+st.sidebar.markdown("---")
+st.sidebar.header("Animation Control Panel")
+
+# Initialize Session States for Play/Pause and Frame Progression
+if "is_playing" not in st.session_state:
+  st.session_state.is_playing = False
+if "animation_frame" not in st.session_state:
+  st.session_state.animation_frame = 0.0
+
+
+# Callback functions for clean sidebar buttons
+def start_animation():
+  st.session_state.is_playing = True
+
+
+def pause_animation():
+  st.session_state.is_playing = False
+
+
+col_b1, col_b2 = st.sidebar.columns(2)
+with col_b1:
+  st.button("▶ Play", on_click=start_animation, use_container_width=True)
+with col_b2:
+  st.button("⏸ Pause", on_click=pause_animation, use_container_width=True)
+
+# Manual progression slider linked directly to state
+animation_frame = st.sidebar.slider(
+    "Wave Phase Progress",
+    0.0,
+    2 * np.pi,
+    float(st.session_state.animation_frame % (2 * np.pi)),
+    0.05,
+)
+st.session_state.animation_frame = animation_frame
+
+speed = st.sidebar.slider("Animation Speed", 0.02, 0.3, 0.1, 0.02)
 
 # Determine Polarization State
 if a_y < 0.05 and a_z > 0.05:
@@ -36,13 +74,22 @@ st.markdown(
     f" `{a_z:.2f}`"
 )
 
-# Constants
+# Constants & Computations
 x = np.linspace(0, 5 * np.pi, 600)
 x_paper = 2.7 * np.pi
 p_offset = np.radians(deg_offset)
+phi = st.session_state.animation_frame
+
+ey = a_y * np.cos(x - phi)
+ez = a_z * np.cos(x - phi + p_offset)
+
+cur_theta = x_paper - phi
+cur_ey = a_y * np.cos(cur_theta)
+cur_ez = a_z * np.cos(cur_theta + p_offset)
+
 theta_circle = np.linspace(0, 2 * np.pi, 400)
 
-# Create Subplots Figure Layout
+# Build Subplots Figure
 fig = make_subplots(
     rows=1,
     cols=3,
@@ -57,14 +104,12 @@ fig = make_subplots(
 )
 
 
-# Helper function to add paper plane background & propagation axis
 def add_paper_plane(fig_obj, col_idx):
   y_p = np.linspace(-1.3, 1.3, 10)
   z_p = np.linspace(-1.3, 1.3, 10)
   Y_p, Z_p = np.meshgrid(y_p, z_p)
   X_p = np.full_like(Y_p, x_paper)
 
-  # Surface trace (Index 0, 5, 8 depending on subplot)
   fig_obj.add_trace(
       go.Surface(
           x=X_p,
@@ -77,7 +122,6 @@ def add_paper_plane(fig_obj, col_idx):
       row=1,
       col=col_idx,
   )
-  # Axis line trace
   fig_obj.add_trace(
       go.Scatter3d(
           x=[0, 5 * np.pi],
@@ -92,13 +136,12 @@ def add_paper_plane(fig_obj, col_idx):
   )
 
 
-# --- INITIALIZE ALL BASE TRACES ---
-# Subplot 1 Base Traces (Indices 0, 1, 2, 3, 4)
+# --- PLOT 1 ---
 add_paper_plane(fig, 1)
 fig.add_trace(
     go.Scatter3d(
         x=x,
-        y=a_y * np.cos(x),
+        y=ey,
         z=np.zeros_like(x),
         mode="lines",
         name="Ex component",
@@ -106,48 +149,48 @@ fig.add_trace(
     ),
     row=1,
     col=1,
-)  # Index 2 (Animated)
+)
 fig.add_trace(
     go.Scatter3d(
         x=x,
         y=np.zeros_like(x),
-        z=a_z * np.cos(x + p_offset),
+        z=ez,
         mode="lines",
         name="Ey component",
         line=dict(color="royalblue", width=3),
     ),
     row=1,
     col=1,
-)  # Index 3 (Animated)
+)
 fig.add_trace(
     go.Scatter3d(
         x=[x_paper, x_paper],
-        y=[0, a_y * np.cos(x_paper)],
-        z=[0, a_z * np.cos(x_paper + p_offset)],
+        y=[0, cur_ey],
+        z=[0, cur_ez],
         mode="lines+markers",
         name="Net E vector",
         line=dict(color="darkgreen", width=5),
     ),
     row=1,
     col=1,
-)  # Index 4 (Animated)
+)
 
-# Subplot 2 Base Traces (Indices 5, 6, 7)
+# --- PLOT 2 ---
 add_paper_plane(fig, 2)
 fig.add_trace(
     go.Scatter3d(
         x=x,
-        y=a_y * np.cos(x),
-        z=a_z * np.cos(x + p_offset),
+        y=a_y * np.cos(x - phi),
+        z=a_z * np.cos(x - phi + p_offset),
         mode="lines",
         name="Net E wave",
         line=dict(color="royalblue", width=4),
     ),
     row=1,
     col=2,
-)  # Index 7 (Animated)
+)
 
-# Subplot 3 Base Traces (Indices 8, 9, 10, 11)
+# --- PLOT 3 ---
 add_paper_plane(fig, 3)
 fig.add_trace(
     go.Scatter3d(
@@ -160,64 +203,23 @@ fig.add_trace(
     ),
     row=1,
     col=3,
-)  # Index 10 (Static ellipse path)
+)
 fig.add_trace(
     go.Scatter3d(
         x=[x_paper],
-        y=[a_y * np.cos(x_paper)],
-        z=[a_z * np.cos(x_paper + p_offset)],
+        y=[cur_ey],
+        z=[cur_ez],
         mode="markers",
         name="Instantaneous E",
         marker=dict(color="crimson", size=6),
     ),
     row=1,
     col=3,
-)  # Index 11 (Animated)
+)
 
-
-# --- BUILD ANIMATION FRAMES ---
-frames_list = []
-animation_steps = 45
-phases = np.linspace(0, 2 * np.pi, animation_steps, endpoint=False)
-
-for i, phi in enumerate(phases):
-  ey = a_y * np.cos(x - phi)
-  ez = a_z * np.cos(x - phi + p_offset)
-
-  cur_theta = x_paper - phi
-  cur_ey = a_y * np.cos(cur_theta)
-  cur_ez = a_z * np.cos(cur_theta + p_offset)
-
-  net_wave_y = a_y * np.cos(x - phi)
-  net_wave_z = a_z * np.cos(x - phi + p_offset)
-
-  frame_data = [
-      go.Scatter3d(x=x, y=ey, z=np.zeros_like(x)),  # Ex component (Index 2)
-      go.Scatter3d(
-          x=x, y=np.zeros_like(x), z=ez
-      ),  # Ey component (Index 3)
-      go.Scatter3d(
-          x=[x_paper, x_paper], y=[0, cur_ey], z=[0, cur_ez]
-      ),  # Net vector (Index 4)
-      go.Scatter3d(
-          x=x, y=net_wave_y, z=net_wave_z
-      ),  # Traveling wave (Index 7)
-      go.Scatter3d(
-          x=[x_paper], y=[cur_ey], z=[cur_ez]
-      ),  # Instantaneous marker (Index 11)
-  ]
-
-  # Explicitly map frames to exact trace indices
-  frames_list.append(
-      go.Frame(data=frame_data, traces=[2, 3, 4, 7, 11], name=str(i))
-  )
-
-fig.frames = frames_list
-
-# Layout & Play/Pause Button Configuration
 fig.update_layout(
     height=550,
-    margin=dict(l=0, r=0, b=0, t=50),
+    margin=dict(l=0, r=0, b=0, t=30),
     scene=dict(
         xaxis_range=[0, 5 * np.pi],
         yaxis_range=[-1.2, 1.2],
@@ -242,47 +244,15 @@ fig.update_layout(
         yaxis_title="Ex",
         zaxis_title="Ey",
     ),
-    updatemenus=[
-        {
-            "type": "buttons",
-            "showactive": False,
-            "buttons": [
-                {
-                    "label": "▶ Play",
-                    "method": "animate",
-                    "args": [
-                        None,
-                        {
-                            "frame": {"duration": 40, "redraw": False},
-                            "fromcurrent": True,
-                            "transition": {"duration": 0},
-                            "mode": "immediate",
-                        },
-                    ],
-                },
-                {
-                    "label": "⏸ Pause",
-                    "method": "animate",
-                    "args": [
-                        [None],
-                        {
-                            "frame": {"duration": 0, "redraw": False},
-                            "mode": "immediate",
-                            "transition": {"duration": 0},
-                        },
-                    ],
-                },
-            ],
-            "direction": "left",
-            "pad": {"r": 10, "t": 10},
-            "showactive": True,
-            "x": 0.5,
-            "xanchor": "center",
-            "y": 1.12,
-            "yanchor": "top",
-        }
-    ],
 )
 
-# Render Chart cleanly in Streamlit
+# Display chart cleanly
 st.plotly_chart(fig, use_container_width=True)
+
+# Auto-play loop handling if play state is active
+if st.session_state.is_playing:
+  st.session_state.animation_frame += speed
+  if st.session_state.animation_frame > 2 * np.pi:
+    st.session_state.animation_frame = 0.0
+  time.sleep(0.03)
+  st.rerun()
