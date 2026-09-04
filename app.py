@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
@@ -17,21 +18,42 @@ st.sidebar.header("Wave Parameters")
 a_y = st.sidebar.slider("Ex Amplitude", 0.0, 1.2, 1.0, 0.05)
 a_z = st.sidebar.slider("Ey Amplitude", 0.0, 1.2, 0.5, 0.05)
 deg_offset = st.sidebar.slider("Phase Angle (deg)", -180.0, 180.0, 0.0, 1.0)
-animation_frame = st.sidebar.slider(
-    "Wave Phase / Time Progress", 0.0, 2 * np.pi, 0.0, 0.05
-)
 
-# Constants
+st.sidebar.markdown("---")
+st.sidebar.header("Animation Controls")
+auto_play = st.sidebar.checkbox("Auto-Play Animation", value=True)
+speed = st.sidebar.slider("Animation Speed", 0.02, 0.3, 0.1, 0.02)
+
+# Initialize session state for animation frame
+if "animation_frame" not in st.session_state:
+  st.session_state.animation_frame = 0.0
+
+# Advance frame if auto-play is active
+if auto_play:
+  st.session_state.animation_frame += speed
+  if st.session_state.animation_frame > 2 * np.pi:
+    st.session_state.animation_frame = 0.0
+
+# Manual slider override linked with session state
+animation_frame = st.sidebar.slider(
+    "Wave Phase Progress",
+    0.0,
+    2 * np.pi,
+    float(st.session_state.animation_frame % (2 * np.pi)),
+    0.05,
+)
+st.session_state.animation_frame = animation_frame
+
+# Constants & Computations
 x = np.linspace(0, 5 * np.pi, 600)
 x_paper = 2.7 * np.pi
 p_offset = np.radians(deg_offset)
-phase = x - animation_frame
+phase = x - st.session_state.animation_frame
 
-# Compute field values
 ey = a_y * np.cos(phase)
 ez = a_z * np.cos(phase + p_offset)
 
-cur_theta = x_paper - animation_frame
+cur_theta = x_paper - st.session_state.animation_frame
 cur_ey = a_y * np.cos(cur_theta)
 cur_ez = a_z * np.cos(cur_theta + p_offset)
 
@@ -56,9 +78,7 @@ st.markdown(
 col1, col2, col3 = st.columns(3)
 
 
-# Helper function to add paper plane and axes
 def add_paper_plane(fig_ax):
-  # Plane at x_paper
   y_p = np.linspace(-1.3, 1.3, 10)
   z_p = np.linspace(-1.3, 1.3, 10)
   Y_p, Z_p = np.meshgrid(y_p, z_p)
@@ -74,7 +94,6 @@ def add_paper_plane(fig_ax):
           showscale=False,
       )
   )
-  # Propagation axis
   fig_ax.add_trace(
       go.Scatter3d(
           x=[0, 5 * np.pi],
@@ -87,7 +106,7 @@ def add_paper_plane(fig_ax):
   )
 
 
-# --- PLOT 1: Component Decomposition ---
+# --- PLOT 1 ---
 fig1 = go.Figure()
 add_paper_plane(fig1)
 fig1.add_trace(
@@ -133,17 +152,16 @@ fig1.update_layout(
     margin=dict(l=0, r=0, b=0, t=30),
     height=450,
 )
-col1.plotly_chart(fig1, use_container_width=True)
+col1.plotly_chart(fig1, use_container_width=True, key="plot1")
 
-
-# --- PLOT 2: Full Traveling Wave ---
+# --- PLOT 2 ---
 fig2 = go.Figure()
 add_paper_plane(fig2)
 fig2.add_trace(
     go.Scatter3d(
         x=x,
-        y=a_y * np.cos(x - animation_frame),
-        z=a_z * np.cos(x - animation_frame + p_offset),
+        y=a_y * np.cos(x - st.session_state.animation_frame),
+        z=a_z * np.cos(x - st.session_state.animation_frame + p_offset),
         mode="lines",
         name="Net E wave",
         line=dict(color="royalblue", width=4),
@@ -162,10 +180,9 @@ fig2.update_layout(
     margin=dict(l=0, r=0, b=0, t=30),
     height=450,
 )
-col2.plotly_chart(fig2, use_container_width=True)
+col2.plotly_chart(fig2, use_container_width=True, key="plot2")
 
-
-# --- PLOT 3: Polarization State / Ellipse Trace ---
+# --- PLOT 3 ---
 fig3 = go.Figure()
 add_paper_plane(fig3)
 theta = np.linspace(0, 2 * np.pi, 400)
@@ -202,4 +219,9 @@ fig3.update_layout(
     margin=dict(l=0, r=0, b=0, t=30),
     height=450,
 )
-col3.plotly_chart(fig3, use_container_width=True)
+col3.plotly_chart(fig3, use_container_width=True, key="plot3")
+
+# Trigger continuous animation loop if checked
+if auto_play:
+  time.sleep(0.02)
+  st.rerun()
